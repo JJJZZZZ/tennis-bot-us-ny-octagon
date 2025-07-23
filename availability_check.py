@@ -2,6 +2,7 @@ import aiohttp
 import asyncio
 import datetime
 import argparse
+from yarl import URL
 
 async def login(email, password):
     LOGIN_URL = "https://rioc.civicpermits.com/Account/Login?ReturnUrl=%2f"
@@ -14,7 +15,7 @@ async def login(email, password):
         async with session.post(LOGIN_URL, data=payload) as response:
             text = await response.text()
             if response.status == 200 and "New Permit Request" in text:
-                cookies = session.cookie_jar.filter_cookies(LOGIN_URL)
+                cookies = session.cookie_jar.filter_cookies(URL(LOGIN_URL))
                 return {cookie.key: cookie.value for cookie in cookies.values()}
             else:
                 raise Exception(f"Login failed with status code {response.status} and response: {text}")
