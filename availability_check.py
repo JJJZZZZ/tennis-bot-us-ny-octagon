@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import argparse
 import os
+import ssl
 from yarl import URL
 from config import config, COURT_IDS, DEFAULT_HEADERS
 from utils import setup_logging, retry_on_exception, get_eastern_date_string
@@ -12,7 +13,12 @@ logger = setup_logging(__name__)
 @retry_on_exception(max_retries=3, exceptions=(aiohttp.ClientError, asyncio.TimeoutError))
 async def login(email, password):
     """Login and return session cookies."""
-    async with aiohttp.ClientSession() as session:
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    
+    connector = aiohttp.TCPConnector(ssl=ssl_context)
+    async with aiohttp.ClientSession(connector=connector) as session:
         payload = {
             'Email': email,
             'Password': password,
@@ -58,8 +64,13 @@ async def main(relative_days):
         headers = DEFAULT_HEADERS.copy()
         headers['Cookie'] = cookie_header
 
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        
+        connector = aiohttp.TCPConnector(ssl=ssl_context)
         tasks = []
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=connector) as session:
             for hour in range(config.BOOKING_START_HOUR, config.BOOKING_END_HOUR):
                 for court_id, court_name in COURT_IDS.items():
                     payload = {

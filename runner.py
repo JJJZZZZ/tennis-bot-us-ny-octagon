@@ -43,7 +43,7 @@ def run_scripts_concurrent(max_workers: int = 3):
     
     # Configuration for scripts to run
     scripts = [
-        'availability_check.py --days 1',
+        'availability_check.py --days 2',
         
         # Day 0 bookings (today)
         # 'booking_script_refactored.py --time 16 --email Kainalam14@gmail.com --password Skyline2024! --days 0',  # Jennifer Chan
@@ -54,14 +54,14 @@ def run_scripts_concurrent(max_workers: int = 3):
 
         # Day 1 bookings (tomorrow)
         # 'booking_script_refactored.py --time 18 --email Kainalam14@gmail.com --password Skyline2024! --days 1',  # Jennifer Chan
-        'booking_script_refactored.py --time 13 --email jjjzzzzlalala@gmail.com --password Lalala@222 --days 1',  # Yihan Li
+        # 'booking_script_refactored.py --time 13 --email jjjzzzzlalala@gmail.com --password Lalala@222 --days 1',  # Yihan Li
         # 'booking_script_refactored.py --time 21 --email nianiabu.chow@gmail.com --password Lalala@222 --days 1',  # Nia Zhou
         # 'booking_script_refactored.py --time 21 --email garvey_chow@sina.com --password Lalala@222 --days 1',  # Jaway Chow
         # 'booking_script_refactored.py --time 20 --email savannahlee.xiang@gmail.com --password test123123 --days 1',  # Xiang Li
 
         # Day 2 bookings
         # 'booking_script_refactored.py --time 13 --email Kainalam14@gmail.com --password Skyline2024! --days 2',  # Jennifer Chan
-        # 'booking_script_refactored.py --time 14 --email jjjzzzzlalala@gmail.com --password Lalala@222 --days 2',  # Yihan Li
+        'booking_script_refactored.py --time 20 --email jjjzzzzlalala@gmail.com --password Lalala@222 --days 2',  # Yihan Li
         # 'booking_script_refactored.py --time 18 --email nianiabu.chow@gmail.com --password Lalala@222 --days 2',  # Nia Zhou
         # 'booking_script_refactored.py --time 19 --email garvey_chow@sina.com --password Lalala@222 --days 2',  # Jaway Chow
         # 'booking_script_refactored.py --time 20 --email savannahlee.xiang@gmail.com --password test123123 --days 2',  # Xiang Li
