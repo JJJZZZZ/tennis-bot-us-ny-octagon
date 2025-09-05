@@ -10,6 +10,7 @@ import time
 from typing import List, Dict, Tuple
 import asyncio
 import datetime
+import os
 
 from booking_core.utils import (
     setup_logging, managed_webdriver, PerformanceTimer,
@@ -306,7 +307,11 @@ async def optimized_booking_once(selected_time: str, email: str, password: str, 
         try:
             with PerformanceTimer("Selenium booking phase", logger):
                 logger.debug("Initializing managed webdriver")
-                with managed_webdriver() as driver:
+                # Check for headless mode from environment variable
+                headless_mode = os.getenv('HEADLESS', 'false').lower() == 'true'
+                if headless_mode:
+                    logger.info("🔧 Running in headless mode (no Chrome window will open)")
+                with managed_webdriver(headless=headless_mode) as driver:
                     logger.debug("Creating OptimizedBookingOperations instance")
                     booking_ops = OptimizedBookingOperations(driver)
 
