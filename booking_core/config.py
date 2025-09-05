@@ -25,11 +25,12 @@ class BookingConfig:
     MAX_RETRIES: int = 3
     RETRY_DELAY: float = 2.0
     
-    # Timeout configuration
-    LOGIN_TIMEOUT: int = 10
-    ELEMENT_TIMEOUT: int = 20
-    SHORT_TIMEOUT: int = 5
-    PAGE_LOAD_TIMEOUT: int = 30
+    # Timeout configuration (optimized for speed)
+    LOGIN_TIMEOUT: int = 5
+    ELEMENT_TIMEOUT: int = 8
+    SHORT_TIMEOUT: int = 3
+    PAGE_LOAD_TIMEOUT: int = 15
+    FAST_TIMEOUT: int = 2  # For known fast elements
     
     # WebDriver configuration
     CHROME_OPTIONS: List[str] = None
@@ -40,7 +41,21 @@ class BookingConfig:
                 "--disable-gpu",
                 "--window-size=1920,1080",
                 "--disable-dev-shm-usage",
-                "--no-sandbox"
+                "--no-sandbox",
+                # Speed optimizations (keeping JavaScript enabled for functionality)
+                "--disable-images",
+                "--disable-plugins",
+                "--disable-extensions",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-features=TranslateUI",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--aggressive-cache-discard",
+                "--memory-pressure-off",
+                "--max_old_space_size=4096",
+                "--disable-blink-features=AutomationControlled"
             ]
 
 # Court mappings
@@ -121,3 +136,4 @@ def get_court_order(selected_time: str) -> List[str]:
 
 # Default configuration instance
 config = BookingConfig()
+

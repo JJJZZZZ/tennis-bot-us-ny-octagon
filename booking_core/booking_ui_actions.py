@@ -1,4 +1,4 @@
-"""Booking operations module with refactored functions."""
+"""Selenium UI actions for booking flow (used by the runner)."""
 
 import datetime
 import time
@@ -9,11 +9,11 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-from config import (
+from .config import (
     config, SITE_TO_CHECKBOX_MAP, COURT_NAME_MAP, 
     DEFAULT_FORM_DATA, get_court_order
 )
-from utils import (
+from .utils import (
     setup_logging, retry_on_exception, safe_wait_and_click,
     safe_wait_and_send_keys, safe_wait_for_element,
     get_eastern_time, get_eastern_date_string,
@@ -109,10 +109,19 @@ class BookingOperations:
             target_month = target_date.strftime('%B')
             target_year = target_date.year
             
-            # Click date picker
-            if not safe_wait_and_click(
-                self.driver, (By.ID, 'event0'), config.ELEMENT_TIMEOUT
-            ):
+            # Try to open date picker by clicking any likely date input
+            date_locators = [
+                (By.ID, 'event0'),
+                (By.CSS_SELECTOR, 'input.hasDatepicker'),
+                (By.CSS_SELECTOR, "input[id*='event']"),
+                (By.XPATH, "//input[contains(@name,'event')]")
+            ]
+            opened = False
+            for loc in date_locators:
+                if safe_wait_and_click(self.driver, loc, config.SHORT_TIMEOUT):
+                    opened = True
+                    break
+            if not opened:
                 raise Exception("Failed to open date picker")
             
             # Wait for date picker to be visible
@@ -197,40 +206,52 @@ class BookingOperations:
         except TimeoutException:
             return False
     
-    def try_booking_alternative_courts(self, selected_time: str, email: str, relative_days: int) -> str:
-        """Try booking alternative courts in priority order."""
-        court_ids = get_court_order(selected_time)
-        
-        for court_id in court_ids:
+    def try_booking_alternative_courts(self, selected_time: str, email: str, relative_days: int, *, exclude_site_id: Optional[str] = None) -> Optional[str]:
+        """Try booking alternative courts in priority order.
+
+        Returns the successful court name if one proceeds past the error state,
+        otherwise returns None. Optionally skips a specific site id.
+        """
+        ordered_site_ids = [c for c in get_court_order(selected_time) if c != exclude_site_id]
+
+        for site_id in ordered_site_ids:
+            court_name = COURT_NAME_MAP.get(site_id, site_id)
             try:
-                court_name = COURT_NAME_MAP[court_id]
                 logger.info(f"Trying to book {court_name}")
-                
+
                 # Select alternative court
                 site_select_element = safe_wait_for_element(
                     self.driver, (By.ID, 'site'), config.ELEMENT_TIMEOUT
                 )
-                if site_select_element:
-                    Select(site_select_element).select_by_value(court_id)
-                    
-                    checkbox_id = SITE_TO_CHECKBOX_MAP[court_id]
-                    if safe_wait_and_click(
-                        self.driver, (By.ID, checkbox_id), config.SHORT_TIMEOUT
-                    ):
-                        if safe_wait_and_click(
-                            self.driver, (By.XPATH, '//button[text()="Add & Confirm"]'), config.SHORT_TIMEOUT
-                        ):
-                            # Check if booking succeeded
-                            if WebDriverWait(self.driver, 2, 0.1).until(
-                                EC.invisibility_of_element_located((By.XPATH, '//button[text()="Add & Confirm"]'))
-                            ):
-                                return f"Booking successful for {court_name} under account {email} for time {selected_time} on day {relative_days}."
-                            
+                if not site_select_element:
+                    raise Exception("Site selection element not found during alternatives")
+
+                Select(site_select_element).select_by_value(site_id)
+
+                # Ensure the facility list is refreshed for the newly selected site
+                safe_wait_and_click(self.driver, (By.ID, "addFacilitySet"), config.SHORT_TIMEOUT)
+
+                # Click corresponding checkbox for this site
+                checkbox_id = SITE_TO_CHECKBOX_MAP[site_id]
+                if not safe_wait_and_click(self.driver, (By.ID, checkbox_id), config.SHORT_TIMEOUT):
+                    raise Exception(f"Could not click checkbox {checkbox_id}")
+
+                # Attempt booking
+                if not safe_wait_and_click(self.driver, (By.XPATH, '//button[text()="Add & Confirm"]'), config.SHORT_TIMEOUT):
+                    raise Exception("Could not click Add & Confirm")
+
+                # If we don't see the specific unavailability error, proceed with this court
+                if not self.check_error_message():
+                    logger.info(f"Proceeding with {court_name}")
+                    return court_name
+
+                logger.info(f"{court_name} unavailable, trying next alternative")
+
             except Exception as e:
-                logger.warning(f"Failed to book {court_name}: {e}")
+                logger.warning(f"Failed when trying {court_name}: {e}")
                 continue
-                
-        return f"Booking failed under account {email} for time {selected_time} on day {relative_days}."
+
+        return None
     
     def fill_additional_details(self) -> None:
         """Fill in additional booking details."""
@@ -267,9 +288,28 @@ class BookingOperations:
     
     def submit_form(self) -> None:
         """Submit the booking form."""
-        if not safe_wait_and_click(
-            self.driver, (By.XPATH, '//button[text()="Submit"]'), config.ELEMENT_TIMEOUT
-        ):
+        # Try multiple strategies/locators to find the submit control
+        locators = [
+            (By.XPATH, "//button[normalize-space()='Submit']"),
+            (By.XPATH, "//button[contains(., 'Submit')]") ,
+            (By.CSS_SELECTOR, "button[type='submit']"),
+            (By.XPATH, "//input[@type='submit' or @value='Submit']"),
+        ]
+        clicked = False
+        for loc in locators:
+            try:
+                # Scroll into view before clicking
+                try:
+                    el = self.driver.find_element(*loc)
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+                except Exception:
+                    pass
+                if safe_wait_and_click(self.driver, loc, config.SHORT_TIMEOUT):
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
             raise Exception("Failed to submit form")
         logger.info("Form submitted successfully")
     

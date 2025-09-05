@@ -5,7 +5,7 @@ import logging
 import functools
 import datetime
 from contextlib import contextmanager
-from typing import Any, Callable, Optional, Generator
+from typing import Any, Callable, Optional, Generator, Dict
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
@@ -13,7 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
-from config import config, EASTERN_TZ
+from .config import config, EASTERN_TZ
 
 def get_eastern_time() -> datetime.datetime:
     """Get current time in US Eastern timezone."""
@@ -23,6 +23,46 @@ def get_eastern_date_string(days_offset: int = 0) -> str:
     """Get date string in Eastern timezone with optional offset."""
     target_date = get_eastern_time() + datetime.timedelta(days=days_offset)
     return target_date.strftime('%Y-%m-%d')
+
+# Performance timing utilities
+class PerformanceTimer:
+    """Context manager for timing operations."""
+    
+    def __init__(self, operation_name: str, logger: Optional[logging.Logger] = None):
+        self.operation_name = operation_name
+        self.logger = logger or setup_logging(__name__)
+        self.start_time = None
+        self.end_time = None
+    
+    def __enter__(self):
+        self.start_time = time.time()
+        self.logger.info(f"Starting {self.operation_name}")
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end_time = time.time()
+        duration = self.end_time - self.start_time
+        if exc_type is None:
+            self.logger.info(f"✅ {self.operation_name} completed in {duration:.2f}s")
+        else:
+            self.logger.error(f"❌ {self.operation_name} failed after {duration:.2f}s: {exc_val}")
+    
+    @property
+    def duration(self) -> Optional[float]:
+        if self.start_time and self.end_time:
+            return self.end_time - self.start_time
+        return None
+
+def timed_operation(operation_name: str):
+    """Decorator to time function execution."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            logger = setup_logging(func.__module__)
+            with PerformanceTimer(f"{operation_name} ({func.__name__})", logger):
+                return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 def setup_logging(name: str, level: int = logging.INFO) -> logging.Logger:
     """Set up consistent logging across modules."""
@@ -169,6 +209,85 @@ def safe_wait_for_element(driver: webdriver.Chrome, locator: tuple,
     except Exception as e:
         logger.error(f"Error waiting for element {locator}: {e}")
         return None
+
+def fast_element_interaction(driver: webdriver.Chrome, locator: tuple, 
+                           action: str, value: str = None, timeout: int = None) -> bool:
+    """Fast element interaction using JavaScript when possible."""
+    if timeout is None:
+        timeout = config.FAST_TIMEOUT
+        
+    logger = setup_logging(__name__)
+    
+    try:
+        # Try JavaScript first for speed
+        element_id = locator[1] if locator[0] == "id" else None
+        
+        if element_id and action == "click":
+            driver.execute_script(f"document.getElementById('{element_id}').click();")
+            return True
+        elif element_id and action == "send_keys" and value:
+            driver.execute_script(f"document.getElementById('{element_id}').value = '{value}';")
+            return True
+        else:
+            # Fallback to regular Selenium (support simple string aliases)
+            by = locator[0]
+            if isinstance(by, str):
+                by_lower = by.lower()
+                if by_lower == 'link_text':
+                    locator = (By.LINK_TEXT, locator[1])
+                elif by_lower == 'css' or by_lower == 'css_selector':
+                    locator = (By.CSS_SELECTOR, locator[1])
+                elif by_lower == 'xpath':
+                    locator = (By.XPATH, locator[1])
+                elif by_lower == 'id':
+                    locator = (By.ID, locator[1])
+            element = WebDriverWait(driver, timeout).until(
+                EC.element_to_be_clickable(locator) if action == "click" 
+                else EC.presence_of_element_located(locator)
+            )
+            if action == "click":
+                element.click()
+            elif action == "send_keys" and value:
+                element.clear()
+                element.send_keys(value)
+            return True
+            
+    except Exception as e:
+        logger.warning(f"Fast interaction failed for {locator}, using fallback: {e}")
+        return False
+
+def javascript_date_time_selection(driver: webdriver.Chrome, date_str: str, 
+                                 start_hour: str, end_hour: str) -> bool:
+    """Use JavaScript to directly set date and time values."""
+    try:
+        driver.execute_script(f"""
+            (function() {{
+                function setDate(val) {{
+                    var el = document.getElementById('event0')
+                        || document.querySelector('input.hasDatepicker')
+                        || document.querySelector("input[id*='event']")
+                        || document.querySelector("input[name*='event']");
+                    if (!el) return false;
+                    el.value = val;
+                    el.dispatchEvent(new Event('input', {{bubbles: true}}));
+                    el.dispatchEvent(new Event('change', {{bubbles: true}}));
+                    return true;
+                }}
+                function setTime(startVal, endVal) {{
+                    var startSelect = document.getElementsByName('startHour')[0];
+                    var endSelect = document.getElementsByName('endHour')[0];
+                    if (startSelect) {{ startSelect.value = startVal; startSelect.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+                    if (endSelect) {{ endSelect.value = endVal; endSelect.dispatchEvent(new Event('change', {{bubbles:true}})); }}
+                    return true;
+                }}
+                return setDate('{date_str}') && setTime('{start_hour}', '{end_hour}');
+            }})();
+        """)
+        return True
+    except Exception as e:
+        logger = setup_logging(__name__)
+        logger.warning(f"JavaScript date/time selection failed: {e}")
+        return False
 
 class BookingError(Exception):
     """Custom exception for booking-related errors."""
