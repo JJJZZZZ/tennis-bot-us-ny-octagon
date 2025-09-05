@@ -288,68 +288,30 @@ class BookingOperations:
     
     def submit_form(self) -> None:
         """Submit the booking form."""
-        # Ensure terms checkbox is checked if present
-        try:
-            self.driver.execute_script("var t=document.getElementById('acceptTerms'); if (t) t.checked = true;")
-        except Exception:
-            pass
-
         # Try multiple strategies/locators to find the submit control
         locators = [
             (By.XPATH, "//button[normalize-space()='Submit']"),
-            (By.XPATH, "//button[contains(., 'Submit Request')]") ,
             (By.XPATH, "//button[contains(., 'Submit')]") ,
-            (By.XPATH, "//button[contains(., 'Continue')]") ,
-            (By.XPATH, "//button[contains(., 'Next')]") ,
             (By.CSS_SELECTOR, "button[type='submit']"),
             (By.XPATH, "//input[@type='submit' or @value='Submit']"),
-            (By.XPATH, "//a[@role='button' and contains(., 'Submit')]") ,
         ]
-
-        # Try normal click, then JS click on each locator
+        clicked = False
         for loc in locators:
             try:
-                el = None
+                # Scroll into view before clicking
                 try:
                     el = self.driver.find_element(*loc)
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
                 except Exception:
                     pass
                 if safe_wait_and_click(self.driver, loc, config.SHORT_TIMEOUT):
-                    logger.info("Form submitted via standard click")
-                    return
-                # Fallback to JS click if standard click failed
-                if el is not None:
-                    try:
-                        self.driver.execute_script("arguments[0].click();", el)
-                        logger.info("Form submitted via JavaScript click")
-                        return
-                    except Exception:
-                        pass
+                    clicked = True
+                    break
             except Exception:
                 continue
-
-        # Final fallback: submit the first visible form via JavaScript
-        try:
-            submitted = self.driver.execute_script("""
-                (function(){
-                    var forms = document.querySelectorAll('form');
-                    for (var i=0; i<forms.length; i++) {
-                        var f = forms[i];
-                        var rect = f.getBoundingClientRect();
-                        var visible = rect.width > 0 && rect.height > 0;
-                        if (visible) { f.submit(); return true; }
-                    }
-                    return false;
-                })();
-            """)
-            if submitted:
-                logger.info("Form submitted via JavaScript form.submit()")
-                return
-        except Exception:
-            pass
-
-        raise Exception("Failed to submit form after multiple strategies")
+        if not clicked:
+            raise Exception("Failed to submit form")
+        logger.info("Form submitted successfully")
     
     def wait_until_booking_time(self) -> None:
         """Wait until the configured booking time."""
