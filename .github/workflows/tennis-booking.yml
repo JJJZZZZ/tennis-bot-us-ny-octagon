@@ -1,10 +1,21 @@
 name: Tennis Court Booking
 
 on:
-  schedule:
-    # Run at 8:00 AM EST (13:00 UTC) every day
-    - cron: '0 13 * * *'
   workflow_dispatch: # Allow manual triggering
+    inputs:
+      booking_days:
+        description: 'Days ahead to book (e.g., 1 for tomorrow, 2 for day after)'
+        required: false
+        default: '1'
+        type: string
+      run_time:
+        description: 'When to run (now or 8am-est)'
+        required: false
+        default: 'now'
+        type: choice
+        options:
+        - now
+        - 8am-est
 
 jobs:
   book-tennis-courts:
@@ -35,8 +46,46 @@ jobs:
         # ChromeDriver is now included with Chrome for Testing - let's use webdriver-manager
         # The Python webdriver-manager will handle ChromeDriver installation automatically
         
+    - name: Wait until 8:00 AM EST (if requested)
+      run: |
+        if [ "${{ github.event.inputs.run_time }}" = "8am-est" ]; then
+          echo "Waiting until exactly 8:00 AM EST to start booking..."
+          echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S')"
+          
+          # Wait until 8:00 AM EST
+          while true; do
+            current_time=$(TZ=America/New_York date '+%H:%M:%S')
+            current_hour=$(TZ=America/New_York date '+%H')
+            current_minute=$(TZ=America/New_York date '+%M')
+            
+            echo "Current EST time: $current_time"
+            
+            # Check if it's 8:00 AM (between 07:59:50 and 08:00:10)
+            if [ "$current_hour" = "08" ] && [ "$current_minute" = "00" ]; then
+              echo "✅ It's 8:00 AM EST! Starting booking process..."
+              break
+            elif [ "$current_hour" -gt "08" ] || ([ "$current_hour" = "08" ] && [ "$current_minute" -gt "00" ]); then
+              echo "✅ Past 8:00 AM EST, starting booking process now..."
+              break
+            fi
+            
+            echo "Waiting... (will start at 8:00 AM EST)"
+            sleep 10
+          done
+        else
+          echo "Running immediately (manual trigger with 'now' option)"
+          echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S')"
+        fi
+      env:
+        TZ: America/New_York
+        
     - name: Run tennis booking script
       run: |
+        # If booking_days is provided, we can modify the booking configuration
+        if [ -n "${{ github.event.inputs.booking_days }}" ]; then
+          echo "Booking for ${{ github.event.inputs.booking_days }} days ahead"
+          # Note: The booking days will be handled by your existing bookings_to_edit.py configuration
+        fi
         python3 run_bookings.py
       env:
         # Set timezone to Eastern Time
@@ -45,6 +94,8 @@ jobs:
         HEADLESS: true
         # Additional Chrome options for CI environment
         DISPLAY: :99
+        # Pass booking days as environment variable
+        BOOKING_DAYS: ${{ github.event.inputs.booking_days || '1' }}
         
     - name: Upload booking results (optional)
       uses: actions/upload-artifact@v4
