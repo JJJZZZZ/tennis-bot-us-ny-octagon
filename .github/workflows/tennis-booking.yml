@@ -1,6 +1,10 @@
 name: Tennis Court Booking
 
 on:
+  schedule:
+    # One-time run on Monday, September 9, 2025 at 8:00 AM EST (13:00 UTC)
+    # This will automatically be disabled after it runs
+    - cron: '0 13 9 9 1'  # minute hour day month dayofweek (1=Monday)
   workflow_dispatch: # Allow manual triggering
     inputs:
       booking_days:
@@ -8,14 +12,6 @@ on:
         required: false
         default: '1'
         type: string
-      run_time:
-        description: 'When to run (now or 8am-est)'
-        required: false
-        default: 'now'
-        type: choice
-        options:
-        - now
-        - 8am-est
 
 jobs:
   book-tennis-courts:
@@ -46,35 +42,13 @@ jobs:
         # ChromeDriver is now included with Chrome for Testing - let's use webdriver-manager
         # The Python webdriver-manager will handle ChromeDriver installation automatically
         
-    - name: Wait until 8:00 AM EST (if requested)
+    - name: Show current time
       run: |
-        if [ "${{ github.event.inputs.run_time }}" = "8am-est" ]; then
-          echo "Waiting until exactly 8:00 AM EST to start booking..."
-          echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S')"
-          
-          # Wait until 8:00 AM EST
-          while true; do
-            current_time=$(TZ=America/New_York date '+%H:%M:%S')
-            current_hour=$(TZ=America/New_York date '+%H')
-            current_minute=$(TZ=America/New_York date '+%M')
-            
-            echo "Current EST time: $current_time"
-            
-            # Check if it's 8:00 AM (between 07:59:50 and 08:00:10)
-            if [ "$current_hour" = "08" ] && [ "$current_minute" = "00" ]; then
-              echo "✅ It's 8:00 AM EST! Starting booking process..."
-              break
-            elif [ "$current_hour" -gt "08" ] || ([ "$current_hour" = "08" ] && [ "$current_minute" -gt "00" ]); then
-              echo "✅ Past 8:00 AM EST, starting booking process now..."
-              break
-            fi
-            
-            echo "Waiting... (will start at 8:00 AM EST)"
-            sleep 10
-          done
+        echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S on %A, %B %d, %Y')"
+        if [ "${{ github.event_name }}" = "schedule" ]; then
+          echo "🗓️ Scheduled run - starting booking process immediately"
         else
-          echo "Running immediately (manual trigger with 'now' option)"
-          echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S')"
+          echo "🔧 Manual trigger - starting booking process"
         fi
       env:
         TZ: America/New_York
