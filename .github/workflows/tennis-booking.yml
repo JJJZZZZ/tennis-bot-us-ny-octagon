@@ -1,0 +1,60 @@
+name: Tennis Court Booking
+
+on:
+  schedule:
+    # Run at 8:00 AM EST (13:00 UTC) every day
+    - cron: '0 13 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  book-tennis-courts:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Install Chrome and ChromeDriver
+      run: |
+        # Install Chrome
+        wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+        # Install ChromeDriver
+        CHROME_VERSION=$(google-chrome --version | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+        CHROMEDRIVER_VERSION=$(curl -s "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_${CHROME_VERSION%%.*}")
+        wget -N "https://chromedriver.storage.googleapis.com/${CHROMEDRIVER_VERSION}/chromedriver_linux64.zip"
+        unzip chromedriver_linux64.zip
+        sudo mv chromedriver /usr/local/bin/
+        sudo chmod +x /usr/local/bin/chromedriver
+        
+    - name: Run tennis booking script
+      run: |
+        python3 run_bookings.py
+      env:
+        # Set timezone to Eastern Time
+        TZ: America/New_York
+        # Run in headless mode for GitHub Actions
+        HEADLESS: true
+        
+    - name: Upload booking results (optional)
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: booking-results
+        path: |
+          *.log
+          booking_results.txt
+        retention-days: 7
