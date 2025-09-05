@@ -187,11 +187,52 @@ class BookingOperations:
     
     def book_court(self) -> None:
         """Attempt to book the court."""
-        if not safe_wait_and_click(
-            self.driver, (By.XPATH, '//button[text()="Add & Confirm"]'), config.ELEMENT_TIMEOUT
-        ):
+        if not self._click_add_and_confirm():
             raise Exception("Failed to click Add & Confirm button")
         logger.info("Clicked Add & Confirm button")
+
+    def _click_add_and_confirm(self) -> bool:
+        """Robustly click the 'Add & Confirm' (or similar) control."""
+        logger.debug("Starting _click_add_and_confirm with multiple fallback strategies")
+        locators = [
+            (By.XPATH, "//button[normalize-space(.)='Add & Confirm']"),
+            (By.XPATH, "//button[contains(normalize-space(.), 'Add') and contains(normalize-space(.), 'Confirm')]"),
+            (By.XPATH, "//button[contains(., 'Add') and contains(., 'Confirm')]"),
+            (By.XPATH, "//button[contains(., 'Add') and contains(., 'Continue')]") ,
+            (By.XPATH, "//input[( @type='button' or @type='submit') and contains(@value,'Add') and (contains(@value,'Confirm') or contains(@value,'Continue'))]")
+        ]
+        
+        for i, loc in enumerate(locators, 1):
+            logger.debug(f"Trying Add & Confirm locator {i}/{len(locators)}: {loc[1]}")
+            try:
+                try:
+                    el = self.driver.find_element(*loc)
+                    logger.debug(f"Found element with locator {i}, scrolling into view")
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
+                except Exception as e:
+                    logger.debug(f"Could not find/scroll element with locator {i}: {e}")
+                    el = None
+                
+                logger.debug(f"Attempting safe_wait_and_click with locator {i}")
+                if safe_wait_and_click(self.driver, loc, config.SHORT_TIMEOUT):
+                    logger.info(f"✅ Add & Confirm clicked successfully using locator {i}")
+                    return True
+                    
+                if el is not None:
+                    logger.debug(f"safe_wait_and_click failed, trying JavaScript click fallback for locator {i}")
+                    try:
+                        self.driver.execute_script("arguments[0].click();", el)
+                        logger.info(f"✅ Add & Confirm clicked via JavaScript fallback using locator {i}")
+                        return True
+                    except Exception as e:
+                        logger.debug(f"JavaScript click fallback failed for locator {i}: {e}")
+                        
+            except Exception as e:
+                logger.debug(f"Complete failure for locator {i}: {e}")
+                continue
+        
+        logger.error("❌ All Add & Confirm locators failed")
+        return False
     
     def check_error_message(self) -> bool:
         """Check if booking failed due to unavailability."""
@@ -237,7 +278,8 @@ class BookingOperations:
                     raise Exception(f"Could not click checkbox {checkbox_id}")
 
                 # Attempt booking
-                if not safe_wait_and_click(self.driver, (By.XPATH, '//button[text()="Add & Confirm"]'), config.SHORT_TIMEOUT):
+                # Click Add & Confirm with robust method
+                if not self._click_add_and_confirm():
                     raise Exception("Could not click Add & Confirm")
 
                 # If we don't see the specific unavailability error, proceed with this court
@@ -288,6 +330,15 @@ class BookingOperations:
     
     def submit_form(self) -> None:
         """Submit the booking form."""
+        logger.debug("Starting submit_form with multiple fallback strategies")
+        
+        # First, wait a moment for form validation to complete after checkbox events
+        logger.debug("Waiting for form validation to complete...")
+        time.sleep(1)
+        
+        # Check submit button status before attempting to click
+        self._check_submit_button_status()
+        
         # Try multiple strategies/locators to find the submit control
         locators = [
             (By.XPATH, "//button[normalize-space()='Submit']"),
@@ -295,23 +346,149 @@ class BookingOperations:
             (By.CSS_SELECTOR, "button[type='submit']"),
             (By.XPATH, "//input[@type='submit' or @value='Submit']"),
         ]
+        
         clicked = False
-        for loc in locators:
+        for i, loc in enumerate(locators, 1):
+            logger.debug(f"Trying Submit locator {i}/{len(locators)}: {loc[1]}")
             try:
                 # Scroll into view before clicking
                 try:
                     el = self.driver.find_element(*loc)
+                    logger.debug(f"Found submit element with locator {i}, checking if enabled")
+                    is_enabled = not el.get_attribute("disabled") and el.is_enabled()
+                    logger.debug(f"Submit button enabled status: {is_enabled}")
+                    
+                    if not is_enabled:
+                        logger.warning(f"Submit button with locator {i} is disabled, trying to enable it")
+                        self._try_enable_submit_button(el)
+                    
+                    logger.debug(f"Scrolling submit element into view")
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", el)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"Could not find/scroll submit element with locator {i}: {e}")
+                    el = None
+                
+                logger.debug(f"Attempting safe_wait_and_click with submit locator {i}")
                 if safe_wait_and_click(self.driver, loc, config.SHORT_TIMEOUT):
+                    logger.info(f"✅ Submit clicked successfully using locator {i}")
                     clicked = True
                     break
-            except Exception:
+                    
+                # Try JavaScript fallback if element was found
+                if el is not None:
+                    logger.debug(f"safe_wait_and_click failed, trying JavaScript click fallback for submit locator {i}")
+                    try:
+                        self.driver.execute_script("arguments[0].click();", el)
+                        logger.info(f"✅ Submit clicked via JavaScript fallback using locator {i}")
+                        clicked = True
+                        break
+                    except Exception as e:
+                        logger.debug(f"JavaScript click fallback failed for submit locator {i}: {e}")
+                        
+            except Exception as e:
+                logger.debug(f"Complete failure for submit locator {i}: {e}")
                 continue
+        
         if not clicked:
-            raise Exception("Failed to submit form")
+            logger.error("❌ All Submit locators failed")
+            # Final fallback: try to submit the form via JavaScript
+            logger.debug("Attempting final JavaScript form submission fallback")
+            try:
+                self.driver.execute_script("""
+                    var forms = document.forms;
+                    for (var i = 0; i < forms.length; i++) {
+                        if (forms[i].method && forms[i].method.toLowerCase() === 'post') {
+                            console.log('Submitting form via JavaScript:', forms[i]);
+                            forms[i].submit();
+                            return true;
+                        }
+                    }
+                    return false;
+                """)
+                logger.info("✅ Form submitted via JavaScript fallback")
+                clicked = True
+            except Exception as e:
+                logger.error(f"JavaScript form submission fallback failed: {e}")
+                
+        if not clicked:
+            raise Exception("Failed to submit form - all strategies failed")
         logger.info("Form submitted successfully")
+    
+    def _check_submit_button_status(self) -> None:
+        """Check and log the status of submit buttons for debugging."""
+        try:
+            buttons_info = self.driver.execute_script("""
+                var buttons = document.querySelectorAll('button, input[type="submit"]');
+                var info = [];
+                for (var i = 0; i < buttons.length; i++) {
+                    var btn = buttons[i];
+                    if (btn.textContent.toLowerCase().includes('submit') || 
+                        btn.type === 'submit' || 
+                        btn.value && btn.value.toLowerCase().includes('submit')) {
+                        info.push({
+                            text: btn.textContent || btn.value || 'N/A',
+                            disabled: btn.disabled,
+                            enabled: !btn.disabled && btn.offsetParent !== null,
+                            classes: btn.className,
+                            type: btn.type,
+                            style: btn.style.cssText
+                        });
+                    }
+                }
+                return info;
+            """)
+            
+            logger.debug(f"Found {len(buttons_info)} submit-related buttons:")
+            for i, btn_info in enumerate(buttons_info):
+                logger.debug(f"  Button {i+1}: text='{btn_info['text']}', disabled={btn_info['disabled']}, enabled={btn_info['enabled']}, classes='{btn_info['classes']}'")
+                
+        except Exception as e:
+            logger.debug(f"Failed to check submit button status: {e}")
+    
+    def _try_enable_submit_button(self, submit_element) -> None:
+        """Try to enable a disabled submit button by re-triggering form validation."""
+        try:
+            logger.debug("Attempting to enable submit button by re-triggering validation")
+            self.driver.execute_script("""
+                var submitBtn = arguments[0];
+                console.log('Attempting to enable submit button');
+                
+                // Re-trigger terms checkbox events
+                var termsCheckbox = document.getElementById('acceptTerms');
+                if (termsCheckbox && termsCheckbox.checked) {
+                    console.log('Re-triggering terms checkbox events');
+                    termsCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    termsCheckbox.dispatchEvent(new Event('click', { bubbles: true }));
+                }
+                
+                // Trigger form validation
+                var form = submitBtn.closest('form');
+                if (form) {
+                    console.log('Triggering form validation');
+                    var event = new Event('change', { bubbles: true });
+                    form.dispatchEvent(event);
+                    
+                    // Check all required fields
+                    var requiredFields = form.querySelectorAll('[required]');
+                    for (var i = 0; i < requiredFields.length; i++) {
+                        if (!requiredFields[i].value) {
+                            console.log('Found empty required field:', requiredFields[i]);
+                        }
+                    }
+                }
+                
+                // Try to manually enable the button
+                if (submitBtn.disabled) {
+                    console.log('Manually enabling submit button');
+                    submitBtn.disabled = false;
+                    submitBtn.removeAttribute('disabled');
+                }
+                
+                console.log('Submit button enabled attempt completed');
+            """, submit_element)
+            
+        except Exception as e:
+            logger.debug(f"Failed to enable submit button: {e}")
     
     def wait_until_booking_time(self) -> None:
         """Wait until the configured booking time."""
