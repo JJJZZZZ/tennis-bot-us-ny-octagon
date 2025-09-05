@@ -264,9 +264,9 @@ class OptimizedBookingOperations(BookingOperations):
             super().fill_additional_details()
 
 
-def _resolve_site_id(site_id: str = None, court: str = None) -> str:
-    """Resolve a site id from either site_id or court name."""
-    logger.debug(f"Resolving site_id from: site_id={site_id}, court={court}")
+def _resolve_site_id(site_id: str = None, court: str = None, selected_time: str = None) -> str:
+    """Resolve a site id from either site_id, court name, or use priority order."""
+    logger.debug(f"Resolving site_id from: site_id={site_id}, court={court}, time={selected_time}")
     
     if site_id:
         logger.debug(f"Using provided site_id: {site_id}")
@@ -281,8 +281,18 @@ def _resolve_site_id(site_id: str = None, court: str = None) -> str:
                 return sid
         logger.error(f"No site_id found for court name: {court}")
         logger.debug(f"Available courts: {list(COURT_NAME_MAP.values())}")
+        raise ValueError(f"Unknown court name: {court}")
     
-    error_msg = f"Missing site_id or unknown court name. site_id={site_id}, court={court}"
+    # If no specific court is requested, use the first court in priority order
+    if selected_time:
+        from booking_core.config import get_court_order
+        priority_order = get_court_order(selected_time)
+        first_priority_site_id = priority_order[0]
+        first_priority_court = COURT_NAME_MAP.get(first_priority_site_id, "Unknown Court")
+        logger.info(f"No specific court requested, using priority order. First choice: {first_priority_court} (site_id: {first_priority_site_id})")
+        return first_priority_site_id
+    
+    error_msg = f"Missing site_id, court name, and time for priority order. site_id={site_id}, court={court}, time={selected_time}"
     logger.error(error_msg)
     raise ValueError(error_msg)
 
@@ -315,7 +325,7 @@ async def optimized_booking_once(selected_time: str, email: str, password: str, 
                     booking_ops.wait_until_booking_time()
 
                     logger.debug("Resolving site_id and court information")
-                    resolved_site_id = _resolve_site_id(site_id, court)
+                    resolved_site_id = _resolve_site_id(site_id, court, selected_time)
                     court_name = COURT_NAME_MAP.get(resolved_site_id, court or "Unknown Court")
                     logger.info(f"Booking for court: {court_name} (site_id: {resolved_site_id})")
                     
@@ -391,8 +401,10 @@ def run_all(bookings: List[Dict[str, str]], max_workers: int = MAX_PARALLEL) -> 
                 site = b.get("site_id")
                 court = b.get("court")
                 
-                if not site and not court:
-                    error_msg = f"Missing 'site_id' or 'court' in booking entry: {b}"
+                # Allow bookings without specific court (will use priority order)
+                # Only require either site_id, court, or time (for priority order)
+                if not site and not court and not b.get("time"):
+                    error_msg = f"Missing 'site_id', 'court', or 'time' (for priority order) in booking entry: {b}"
                     logger.error(error_msg)
                     results.append((f"{b.get('email', 'unknown')}@{b.get('time', 'unknown')}", -1, error_msg))
                     continue
@@ -420,9 +432,17 @@ def run_all(bookings: List[Dict[str, str]], max_workers: int = MAX_PARALLEL) -> 
             
             try:
                 output = future.result()
-                logger.info(f"✅ Completed ({completed_count}/{len(future_to_booking)}): {b['email'][:5]}*** @ {b['time']} (days={b['days']})")
+                # Check if booking actually succeeded based on the message content
+                is_success = output.startswith("✅")
+                status = 0 if is_success else -1
+                
+                if is_success:
+                    logger.info(f"✅ Completed ({completed_count}/{len(future_to_booking)}): {b['email'][:5]}*** @ {b['time']} (days={b['days']})")
+                else:
+                    logger.error(f"❌ Failed ({completed_count}/{len(future_to_booking)}): {b['email'][:5]}*** @ {b['time']} (days={b['days']})")
+                
                 print(f"\n--- Result for {b['email'][:5]}*** @ {b['time']} ---\n{output}\n--- End Result ---\n")
-                results.append((f"{b['email']}@{b['time']}", 0, output))
+                results.append((f"{b['email']}@{b['time']}", status, output))
             except Exception as e:
                 logger.error(f"❌ Failed ({completed_count}/{len(future_to_booking)}): {b['email'][:5]}*** @ {b['time']} (days={b['days']}): {e}", exc_info=True)
                 results.append((f"{b['email']}@{b['time']}", -1, str(e)))
@@ -468,8 +488,8 @@ def main() -> int:
                 days_val = int(b["days"]) if isinstance(b["days"], str) else b["days"]
                 site = b.get("site_id")
                 court = b.get("court")
-                resolved = _resolve_site_id(site, court)
-                court_name = COURT_NAME_MAP.get(resolved, court or "Unknown Court")
+                resolved = _resolve_site_id(site, court, b['time'])
+                court_name = COURT_NAME_MAP.get(resolved, court or "Auto Priority Order")
                 logger.debug(f"Dry-run booking {i+1}: email={b['email'][:5]}***, time={b['time']}, days={days_val}, court={court_name}")
                 print(f"- {b['email'][:5]}*** time={b['time']} days={days_val} court={court_name} (site_id={resolved})")
             except Exception as e:
