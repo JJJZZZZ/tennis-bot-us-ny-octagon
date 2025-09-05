@@ -50,7 +50,7 @@ jobs:
         HEADLESS: true
         
     - name: Upload booking results (optional)
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: booking-results
