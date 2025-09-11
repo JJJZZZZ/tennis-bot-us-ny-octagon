@@ -25,14 +25,14 @@ BOOKINGS: List[Dict[str, str]] = [
 
     # Day 1 bookings (tomorrow)
     # {"time": "18", "email": "Kainalam14@gmail.com", "password": "Skyline2024!", "days": 1},  # Jennifer Chan
-    {"time": "18", "email": "jjjzzzzlalala@gmail.com", "password": "Lalala@222", "days": 1},  # Yihan Li
-    {"time": "19", "email": "nianiabu.chow@gmail.com", "password": "Lalala@222", "days": 1},  # Nia Zhou
+    # {"time": "18", "email": "jjjzzzzlalala@gmail.com", "password": "Lalala@222", "days": 1},  # Yihan Li
+    # {"time": "19", "email": "nianiabu.chow@gmail.com", "password": "Lalala@222", "days": 1},  # Nia Zhou
     # {"time": "21", "email": "garvey_chow@sina.com", "password": "Lalala@222", "days": 1},  # Jaway Chow
     # {"time": "20", "email": "savannahlee.xiang@gmail.com", "password": "test123123", "days": 1},  # Xiang Li
 
     # Day 2 bookings
     # {"time": "13", "email": "Kainalam14@gmail.com", "password": "Skyline2024!", "days": 2},  # Jennifer Chan
-    # {"time": "20", "email": "jjjzzzzlalala@gmail.com", "password": "Lalala@222", "days": 2},  # Yihan Li
+    {"time": "20", "email": "jjjzzzzlalala@gmail.com", "password": "Lalala@222", "days": 2},  # Yihan Li
     # {"time": "18", "email": "nianiabu.chow@gmail.com", "password": "Lalala@222", "days": 2},  # Nia Zhou
     # {"time": "19", "email": "garvey_chow@sina.com", "password": "Lalala@222", "days": 2},  # Jaway Chow
     # {"time": "20", "email": "savannahlee.xiang@gmail.com", "password": "test123123", "days": 2},  # Xiang Li
