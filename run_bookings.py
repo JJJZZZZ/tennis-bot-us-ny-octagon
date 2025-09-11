@@ -298,53 +298,60 @@ def _resolve_site_id(site_id: str = None, court: str = None, selected_time: str 
     raise ValueError(error_msg)
 
 
-@timed_operation("Complete optimized booking")
+@timed_operation("Complete optimized booking with pre-setup")
 async def optimized_booking_once(selected_time: str, email: str, password: str, relative_days: int, *, site_id: str = None, court: str = None) -> str:
-    """Optimized booking for a specific court from the schedule (no API pre-check)."""
-    logger.info(f"🚀 Starting optimized booking: email={email[:5]}***, time={selected_time}, days={relative_days}, site_id={site_id}, court={court}")
+    """Optimized booking with pre-setup before 8 AM for immediate execution."""
+    logger.info(f"🚀 Starting optimized booking with pre-setup: email={email[:5]}***, time={selected_time}, days={relative_days}, site_id={site_id}, court={court}")
     
     with PerformanceTimer("Total booking operation", logger):
         try:
-            with PerformanceTimer("Selenium booking phase", logger):
-                logger.debug("Initializing managed webdriver")
-                # Check for headless mode from environment variable
-                headless_mode = os.getenv('HEADLESS', 'false').lower() == 'true'
-                if headless_mode:
-                    logger.info("🔧 Running in headless mode (no Chrome window will open)")
-                with managed_webdriver(headless=headless_mode) as driver:
-                    logger.debug("Creating OptimizedBookingOperations instance")
-                    booking_ops = OptimizedBookingOperations(driver)
+            # Check for headless mode from environment variable
+            headless_mode = os.getenv('HEADLESS', 'false').lower() == 'true'
+            if headless_mode:
+                logger.info("🔧 Running in headless mode (no Chrome window will open)")
 
-                    logger.debug("Starting login process")
+            with managed_webdriver(headless=headless_mode) as driver:
+                booking_ops = OptimizedBookingOperations(driver)
+
+                # Phase 1: Pre-setup (before 8 AM) - do everything except the actual booking
+                with PerformanceTimer("Pre-setup phase", logger):
+                    logger.info("📋 Starting pre-setup phase (before 8 AM)...")
+                    
+                    logger.debug("Pre-setup: Login")
                     booking_ops.fast_login(email, password)
 
-                    with PerformanceTimer("Navigation", logger):
-                        logger.debug("Navigating to New Permit Request")
-                        if not fast_element_interaction(driver, ("link_text", "New Permit Request"), "click"):
-                            logger.debug("Fast navigation failed, using standard navigation")
-                            booking_ops.navigate_to_new_permit_request()
-                        else:
-                            logger.debug("Fast navigation to New Permit Request successful")
+                    logger.debug("Pre-setup: Navigate to booking page")
+                    if not fast_element_interaction(driver, ("link_text", "New Permit Request"), "click"):
+                        logger.debug("Fast navigation failed, using standard navigation")
+                        booking_ops.navigate_to_new_permit_request()
+                    else:
+                        logger.debug("Fast navigation to New Permit Request successful")
 
-                    logger.debug("Waiting until booking time")
-                    booking_ops.wait_until_booking_time()
-
-                    logger.debug("Resolving site_id and court information")
+                    logger.debug("Pre-setup: Resolve court information")
                     resolved_site_id = _resolve_site_id(site_id, court, selected_time)
                     court_name = COURT_NAME_MAP.get(resolved_site_id, court or "Unknown Court")
-                    logger.info(f"Booking for court: {court_name} (site_id: {resolved_site_id})")
-                    
-                    logger.debug("Selecting site and checkbox")
+                    logger.info(f"Pre-setup: Prepared for court: {court_name} (site_id: {resolved_site_id})")
+
+                    logger.debug("Pre-setup: Select site and checkbox (ready state)")
                     booking_ops.fast_select_site_and_checkbox(resolved_site_id)
 
-                    logger.debug("Selecting date and time")
+                    logger.info("✅ Pre-setup completed! Ready for 8 AM booking execution...")
+
+                # Phase 2: Wait until exactly 8 AM
+                logger.debug("⏰ Waiting until booking time (8 AM EST)")
+                booking_ops.wait_until_booking_time()
+
+                # Phase 3: Immediate execution at 8 AM
+                with PerformanceTimer("Immediate booking execution", logger):
+                    logger.info("🏃‍♂️ 8 AM reached! Executing booking immediately...")
+
+                    logger.debug("Immediate: Select date and time")
                     booking_ops.fast_select_date_and_time(selected_time, relative_days)
 
-                    with PerformanceTimer("Booking confirmation", logger):
-                        logger.debug("Attempting to book court")
-                        booking_ops.book_court()
+                    logger.debug("Immediate: Book court")
+                    booking_ops.book_court()
 
-                    logger.debug("Checking for error messages")
+                    logger.debug("Immediate: Check for errors")
                     if booking_ops.check_error_message():
                         logger.warning(f"Court {court_name} unavailable or booking failed; trying alternatives…")
                         alt_court = booking_ops.try_booking_alternative_courts(
@@ -354,19 +361,14 @@ async def optimized_booking_once(selected_time: str, email: str, password: str, 
                             error_msg = f"❌ Booking failed for {court_name} under account {email[:5]}*** for time {selected_time} on day {relative_days}."
                             logger.error(error_msg)
                             return error_msg
-                        # Replace court_name to reflect the alternative selected
                         logger.info(f"Alternative booking successful: {alt_court}")
                         court_name = alt_court
-                    else:
-                        logger.debug("No error message detected, proceeding with original booking")
 
-                    # Only fill and submit if we did not see an error (either initial or alternative worked)
-                    logger.debug("Filling additional form details")
+                    logger.debug("Immediate: Fill form details")
                     booking_ops.fast_fill_additional_details()
 
-                    with PerformanceTimer("Form submission", logger):
-                        logger.debug("Submitting booking form")
-                        booking_ops.submit_form()
+                    logger.debug("Immediate: Submit booking")
+                    booking_ops.submit_form()
 
                     success_msg = f"✅ Booking successful for {court_name} under account {email[:5]}*** for time {selected_time} on day {relative_days}."
                     logger.info(success_msg)

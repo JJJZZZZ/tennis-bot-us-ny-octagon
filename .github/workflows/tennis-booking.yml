@@ -2,9 +2,9 @@ name: Tennis Court Booking
 
 on:
   schedule:
-    # One-time run on Monday, September 9, 2025 at 8:00 AM EST (13:00 UTC)
-    # This will automatically be disabled after it runs
-    - cron: '0 13 9 9 1'  # minute hour day month dayofweek (1=Monday)
+    # Daily run at 7:58 AM EST (12:58 UTC) to allow 2 minutes pre-setup before 8 AM booking time
+    # This provides just enough buffer time for login, navigation, and preparation
+    - cron: '58 12 * * *'  # minute hour day month dayofweek (* = every day)
   workflow_dispatch: # Allow manual triggering
     inputs:
       booking_days:
@@ -12,6 +12,11 @@ on:
         required: false
         default: '1'
         type: string
+      start_early:
+        description: 'Start pre-setup early (recommended for better booking success)'
+        required: false
+        default: 'true'
+        type: boolean
 
 jobs:
   book-tennis-courts:
@@ -42,13 +47,21 @@ jobs:
         # ChromeDriver is now included with Chrome for Testing - let's use webdriver-manager
         # The Python webdriver-manager will handle ChromeDriver installation automatically
         
-    - name: Show current time
+    - name: Show current time and strategy
       run: |
         echo "Current EST time: $(TZ=America/New_York date '+%H:%M:%S on %A, %B %d, %Y')"
+        echo "Target booking time: 8:00 AM EST"
         if [ "${{ github.event_name }}" = "schedule" ]; then
-          echo "🗓️ Scheduled run - starting booking process immediately"
+          echo "🗓️ Scheduled run (7:58 AM) - will complete 2-minute pre-setup then wait until 8:00 AM"
+          echo "📋 Pre-setup includes: login, navigation, court selection preparation"
+          echo "⏰ At exactly 8:00 AM: immediate date/time selection and booking execution"
         else
-          echo "🔧 Manual trigger - starting booking process"
+          echo "🔧 Manual trigger - using optimized pre-setup booking flow"
+          if [ "${{ github.event.inputs.start_early }}" = "true" ]; then
+            echo "✅ Early start enabled - will pre-setup before 8 AM"
+          else
+            echo "⚠️ Early start disabled - will run normally"
+          fi
         fi
       env:
         TZ: America/New_York
@@ -79,4 +92,5 @@ jobs:
         path: |
           *.log
           booking_results.txt
+        if-no-files-found: warn
         retention-days: 7

@@ -123,11 +123,27 @@ def managed_webdriver(headless: bool = False) -> Generator[webdriver.Chrome, Non
         
         if headless:
             options.add_argument("--headless")
+            # Add additional headless options for stability
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--disable-gpu")
             
         for option in config.CHROME_OPTIONS:
             options.add_argument(option)
         
-        service = Service(ChromeDriverManager().install())
+        # Try ChromeDriverManager with error handling
+        try:
+            logger.info("Installing ChromeDriver using webdriver-manager...")
+            service = Service(ChromeDriverManager().install())
+        except Exception as cdm_error:
+            logger.warning(f"ChromeDriverManager failed: {cdm_error}. Trying system chromedriver...")
+            # Fallback to system chromedriver if webdriver-manager fails
+            try:
+                service = Service()  # Use system PATH chromedriver
+            except Exception as system_error:
+                logger.error(f"System chromedriver also failed: {system_error}")
+                raise cdm_error  # Re-raise original error
+        
         driver = webdriver.Chrome(service=service, options=options)
         driver.set_page_load_timeout(config.PAGE_LOAD_TIMEOUT)
         
